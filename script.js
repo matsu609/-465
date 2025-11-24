@@ -14,9 +14,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1m を何 px で表示するかを定義 (例: 1m = 50px で2倍の拡大率)
     const PX_PER_METER = 50;
 
-    let selectedColor = '#FF5733'; // デフォルト色
+let selectedColor = '#FF5733'; // デフォルト色
 
-    let furniture = []; // { id, name, width, height, color, x, y }
+    // localStorageから家具データを読み込む
+    const loadFurnitureData = () => {
+        const data = localStorage.getItem('furnitureLayout');
+        return data ? JSON.parse(data) : [];
+    };
+
+    // 家具データをlocalStorageに保存する
+    const saveFurnitureData = () => {
+        localStorage.setItem('furnitureLayout', JSON.stringify(furniture));
+    };
+
+let furniture = loadFurnitureData(); // localStorageからデータを読み込む
     // 初期値はm単位で取得し、内部的にはpxに変換して保持
     let currentRoomWidthM = parseFloat(roomWidthInput.value) || 0;
     let currentRoomHeightM = parseFloat(roomHeightInput.value) || 0;
@@ -54,15 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
             let finalX_px = item.x * PX_PER_METER;
             let finalY_px = item.y * PX_PER_METER;
 
-            // 部屋の境界内で移動を制限 (オフセット適用後の座標を使用)
-            finalX_px = Math.max(0, Math.min(finalX_px, currentRoomWidthPx - currentDisplayWidthPx));
-            finalY_px = Math.max(0, Math.min(finalY_px, currentRoomHeightPx - currentDisplayHeightPx));
-
             furnitureDiv.style.width = `${currentDisplayWidthPx}px`;
             furnitureDiv.style.height = `${currentDisplayHeightPx}px`;
             furnitureDiv.style.backgroundColor = item.color;
             furnitureDiv.style.left = `${finalX_px}px`;
             furnitureDiv.style.top = `${finalY_px}px`;
+            furnitureDiv.style.transform = `rotate(${item.rotation}deg)`; // 回転角度を適用
             // テキスト用のspan要素を作成し、家具名を設定
             const furnitureTextSpan = document.createElement('span');
             furnitureTextSpan.classList.add('furniture-text'); // 新しいクラスを追加
@@ -97,6 +105,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ドラッグ中のスタイルを適用 (オプション)
                 furnitureDiv.style.cursor = 'grabbing';
                 furnitureDiv.style.zIndex = 1000; // 最前面に表示
+
+                const handleWheel = (wheelEvent) => {
+                    if (isDragging && currentFurniture) {
+                        wheelEvent.preventDefault(); // ページのスクロールを防止
+                        const rotationStep = 5; // 5度単位で回転
+                        if (wheelEvent.deltaY > 0) {
+                            // ホイールダウンで時計回り
+                            currentFurniture.rotation = (currentFurniture.rotation + rotationStep) % 360;
+                        } else {
+                            // ホイールアップで反時計回り
+                            currentFurniture.rotation = (currentFurniture.rotation - rotationStep + 360) % 360;
+                        }
+                        furnitureDiv.style.transform = `rotate(${currentFurniture.rotation}deg)`;
+                    }
+                };
+                window.addEventListener('wheel', handleWheel, { passive: false });
+
+                // マウスアップ時にホイールイベントリスナーを削除
+                const removeWheelListener = () => {
+                    window.removeEventListener('wheel', handleWheel);
+                    window.removeEventListener('mouseup', removeWheelListener); // このリスナー自身も削除
+                };
+                window.addEventListener('mouseup', removeWheelListener);
             });
 
             roomCanvas.addEventListener('mousemove', (e) => {
@@ -107,13 +138,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 新しい位置を計算 (PX単位)
                 let newX_px = e.clientX - roomCanvas.getBoundingClientRect().left - xOffset;
                 let newY_px = e.clientY - roomCanvas.getBoundingClientRect().top - yOffset;
-
-                // 部屋の境界内で移動を制限
-                const furnitureWidthPx = currentFurniture.width * PX_PER_METER;
-                const furnitureHeightPx = currentFurniture.height * PX_PER_METER;
-
-                newX_px = Math.max(0, Math.min(newX_px, currentRoomWidthPx - furnitureWidthPx));
-                newY_px = Math.max(0, Math.min(newY_px, currentRoomHeightPx - furnitureHeightPx));
 
                 furnitureDiv.style.left = `${newX_px}px`;
                 furnitureDiv.style.top = `${newY_px}px`;
@@ -137,7 +161,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (index !== -1) {
                         furniture[index].x = updatedX_m;
                         furniture[index].y = updatedY_m;
+                        furniture[index].rotation = currentFurniture.rotation; // 回転角度を保存
                     }
+                    saveFurnitureData(); // データを保存
                     currentFurniture = null;
                     renderFurniture(); // UIを更新して、リストの座標も反映させる
                 }
@@ -174,13 +200,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     color: selectedColor, // 選択された色を使用
                     x,
                     y,
+                    rotation: 0, // 新しいrotationプロパティを追加
                 };
                 furniture.push(newFurniture);
+                saveFurnitureData(); // データを保存
                 renderFurniture();
-                // フォームをリセット
-                furnitureNameInput.value = '机';
-                furnitureWidthInput.value = '2';
-                furnitureHeightInput.value = '1';
                 // 色はリセットしない（最後に選択された色を維持）
             } else {
                 alert('家具の名前、幅、高さを正しく入力してください。');
@@ -213,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.tagName === 'BUTTON') {
             const idToRemove = parseInt(e.target.dataset.id, 10);
             furniture = furniture.filter(item => item.id !== idToRemove);
+            saveFurnitureData(); // データを保存
             renderFurniture();
         }
     });
